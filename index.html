@@ -453,65 +453,189 @@ window.handleAuth = async e => {
 
 /* LOAD PROFILE */
 
+let profileLoadInFlight = null;
+
+/* PROFILE ERROR SCREEN (RETRY INSTEAD OF INSTANT LOGOUT) */
+
+function renderProfileError(error, uid){
+
+ $('logout-btn').classList.remove('hidden');
+ $('header-shop').textContent = 'Shopkeeper Portal';
+
+ const code = error?.code || '';
+ const isTransient =
+  code === 'permission-denied' ||
+  code === 'unavailable' ||
+  code === 'network-request-failed' ||
+  code === 'deadline-exceeded' ||
+  /network|permission|offline|unavailable|missing/i.test(error?.message || '');
+
+ $('app').innerHTML = `
+ <div class="auth-wrap">
+ <section class="panel max-w-lg w-full p-7 text-center">
+
+ <div class="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-3xl mx-auto">
+ <i class="fa-solid ${isTransient ? 'fa-wifi' : 'fa-circle-exclamation'}"></i>
+ </div>
+
+ <h1 class="text-2xl font-extrabold mt-4">
+ ${isTransient ? 'Could not load shop profile' : 'Profile check issue'}
+ </h1>
+
+ <p class="text-sm text-slate-500 mt-2">
+ ${esc(error?.message || 'Unable to verify your shopkeeper profile right now.')}
+ </p>
+
+ ${code ? `<p class="text-[11px] font-mono text-slate-400 mt-2">Code: ${esc(code)}</p>` : ''}
+
+ <div class="flex flex-wrap justify-center gap-3 mt-6">
+ <button onclick="retryProfileLoad('${esc(uid || '')}')" class="btn-primary rounded-xl px-5 py-3 text-sm font-extrabold">
+ <i class="fa-solid fa-rotate-right mr-1.5"></i>Retry
+ </button>
+ <button onclick="logoutShopkeeper()" class="rounded-xl border px-5 py-3 text-sm font-bold">
+ Logout
+ </button>
+ </div>
+
+ </section>
+ </div>
+ `;
+
+}
+
+window.retryProfileLoad = async uid => {
+
+ const targetUid = uid || auth.currentUser?.uid || currentUser?.uid;
+ if(!targetUid){
+  renderAuth();
+  return;
+ }
+
+ $('app').innerHTML = `
+ <div class="panel p-8 text-center">
+ <i class="fa-solid fa-spinner fa-spin text-2xl text-green-700"></i>
+ <p class="text-sm text-slate-500 mt-3">Retrying profile load...</p>
+ </div>
+ `;
+
+ try{
+  await loadProfile(targetUid);
+ }catch(e){
+  console.error('Retry profile error:', e);
+  err(e);
+  renderProfileError(e, targetUid);
+ }
+
+};
+
+
+/* LOAD PROFILE */
+
 async function loadProfile(uid){
 
- const userSnap = await getDoc(doc(db,'users',uid));
-
- if(!userSnap.exists()){
-
-  await signOut(auth);
-
-  throw new Error('Shopkeeper profile nahi mila. Account registration complete karein.');
-
+ if(profileLoadInFlight){
+  return profileLoadInFlight;
  }
 
- const userData = userSnap.data();
+ profileLoadInFlight = (async () => {
 
- if(userData.role !== 'shopkeeper'){
+  const userSnap = await getDoc(doc(db,'users',uid));
 
-  await signOut(auth);
+  if(!userSnap.exists()){
+   const e = new Error('Shopkeeper profile not found. Complete registration or check your account.');
+   e.code = 'profile-missing';
+   throw e;
+  }
 
-  throw new Error('Yeh account Shopkeeper App ke liye authorized nahi hai.');
+  const userData = userSnap.data();
 
+  if(userData.role !== 'shopkeeper'){
+   await signOut(auth);
+   throw new Error('This account is not authorized for the Shopkeeper App.');
+  }
+
+  if(!userData.shopId){
+   const e = new Error('Shop ID is missing on your profile. Contact support or retry.');
+   e.code = 'shopid-missing';
+   throw e;
+  }
+
+  const shopSnap = await getDoc(doc(db,'shops',userData.shopId));
+
+  if(!shopSnap.exists()){
+   const e = new Error('Shop record not found yet. Retry or contact admin.');
+   e.code = 'shop-missing';
+   throw e;
+  }
+
+  const shopData = shopSnap.data();
+
+  if(shopData.ownerUid !== uid){
+   await signOut(auth);
+   throw new Error('Shop ownership verification failed.');
+  }
+
+  currentProfile = {
+   ...userData,
+   ...shopData,
+   uid,
+   shopId:userData.shopId
+  };
+
+  statusScreen();
+
+ })();
+
+ try{
+  return await profileLoadInFlight;
+ }finally{
+  profileLoadInFlight = null;
  }
-
- if(!userData.shopId){
-
-  throw new Error('Shopkeeper profile mein Shop ID missing hai.');
-
- }
-
- const shopSnap = await getDoc(doc(db,'shops',userData.shopId));
-
- if(!shopSnap.exists()){
-
-  throw new Error('Shop profile nahi mili. Admin se contact karein.');
-
- }
-
- const shopData = shopSnap.data();
-
- if(shopData.ownerUid !== uid){
-
-  await signOut(auth);
-
-  throw new Error('Shop ownership verification failed.');
-
- }
-
- currentProfile = {
-  ...userData,
-  ...shopData,
-  uid,
-  shopId:userData.shopId
- };
-
- statusScreen();
 
 }
 
 
-/* APPROVAL SCREEN */
+/* AUTH STATE LISTENER */
+
+onAuthStateChanged(auth,async user=>{
+
+ if(!user){
+
+  currentUser=null;
+  currentProfile=null;
+  profileLoadInFlight=null;
+
+  if(!registrationInProgress){
+   renderAuth();
+  }
+
+  return;
+
+ }
+
+ currentUser=user;
+
+ if(registrationInProgress)return;
+
+ try{
+
+  await loadProfile(user.uid);
+
+ }catch(e){
+
+  console.error('Profile loading error:',e);
+
+  err(e);
+
+  if(auth.currentUser){
+   renderProfileError(e, user.uid);
+  }else{
+   renderAuth();
+  }
+
+ }
+
+});
 
 function statusScreen(){
 
