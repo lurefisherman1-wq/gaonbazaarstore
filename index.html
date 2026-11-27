@@ -1342,7 +1342,7 @@ function orderCard(o){
  if(s==='Order Placed'){
 
   action = `
-  <button onclick="changeOrderStatus('${o.id}','Picking in Progress')" class="btn-primary rounded-lg px-3 py-2 text-xs font-bold">
+  <button onclick="changeOrderStatus('${esc(o.id)}','Picking in Progress')" class="btn-primary rounded-lg px-3 py-2 text-xs font-bold">
   Start preparing
   </button>
   `;
@@ -1350,7 +1350,7 @@ function orderCard(o){
  }else if(s==='Picking in Progress'){
 
   action = `
-  <button onclick="changeOrderStatus('${o.id}','Packing Complete')" class="btn-primary rounded-lg px-3 py-2 text-xs font-bold">
+  <button onclick="changeOrderStatus('${esc(o.id)}','Packing Complete')" class="btn-primary rounded-lg px-3 py-2 text-xs font-bold">
   Mark ready
   </button>
   `;
@@ -1358,14 +1358,21 @@ function orderCard(o){
  }else if(o.mode==='pickup' && s==='Packing Complete'){
 
   action = `
-  <button onclick="changeOrderStatus('${o.id}','Delivered')" class="btn-primary rounded-lg px-3 py-2 text-xs font-bold">
+  <button onclick="changeOrderStatus('${esc(o.id)}','Delivered')" class="btn-primary rounded-lg px-3 py-2 text-xs font-bold">
   Confirm handover
   </button>
   `;
 
  }else if(s==='Packing Complete'){
 
-  action = '<span class="text-xs text-blue-700 font-bold">Ready for delivery partner</span>';
+  action = `
+  <div class="flex flex-wrap items-center gap-2">
+  <span class="text-xs text-blue-700 font-bold">Ready for delivery partner</span>
+  <button onclick="changeOrderStatus('${esc(o.id)}','Handed Over')" class="btn-primary rounded-lg px-3 py-2 text-xs font-bold">
+  Handover to delivery partner
+  </button>
+  </div>
+  `;
 
  }else{
 
@@ -1418,6 +1425,48 @@ function orderCard(o){
  `;
 
 }
+
+
+/* ORDER STATUS */
+
+window.changeOrderStatus = async(id,status)=>{
+
+ if(!allowed())return;
+
+ const o = orders.find(x=>x.id===id);
+ if(!o)return;
+
+ const data = {
+  status,
+  updatedAt:serverTimestamp()
+ };
+
+ if(status==='Packing Complete' && o.mode!=='pickup'){
+  data.deliveryStatus='Available';
+ }
+
+ if(status==='Handed Over'){
+  data.status='Out for Delivery';
+  data.deliveryStatus='Handed Over';
+  data.handedOverAt=serverTimestamp();
+ }
+
+ if(status==='Delivered'){
+  data.deliveryStatus='Delivered';
+ }
+
+ try{
+
+  await updateDoc(doc(db,'orders',id),data);
+  toast('Order status updated.');
+  tab='orders';
+  await loadDashboard();
+
+ }catch(e){
+  err(e,'changeOrderStatus');
+ }
+
+};
 
 
 /* ORDER STATUS */
