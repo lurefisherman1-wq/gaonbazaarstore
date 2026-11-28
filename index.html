@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -71,50 +70,22 @@ button,input,select,textarea{font:inherit}
 </div>
 
 <script type="module">
-
-import {initializeApp} from 'https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js';
-
-import {
- getAuth,
- onAuthStateChanged,
- createUserWithEmailAndPassword,
- signInWithEmailAndPassword,
- signOut
-} from 'https://www.gstatic.com/firebasejs/12.5.0/firebase-auth.js';
-
-import {
- getFirestore,
- doc,
- getDoc,
- setDoc,
- collection,
- addDoc,
- getDocs,
- query,
- where,
- updateDoc,
- deleteDoc,
- serverTimestamp
-} from 'https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js';
-
-
-/* FIREBASE CONFIG */
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js';
+import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'https://www.gstatic.com/firebasejs/12.5.0/firebase-auth.js';
+import { getFirestore, doc, getDoc, setDoc, collection, addDoc, getDocs, query, where, updateDoc, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js';
 
 const firebaseConfig = {
- apiKey: "AIzaSyCuSO-U8o1QYUSR2Ay-mBb7orjgLj4H448",
- authDomain: "gaonbazaar-297a8.firebaseapp.com",
- projectId: "gaonbazaar-297a8",
- storageBucket: "gaonbazaar-297a8.firebasestorage.app",
- messagingSenderId: "381925642784",
- appId: "1:381925642784:web:72c4acd4ac69c6605a6245"
+  apiKey: "AIzaSyCuSO-U8o1QYUSR2Ay-mBb7orjgLj4H448",
+  authDomain: "gaonbazaar-297a8.firebaseapp.com",
+  projectId: "gaonbazaar-297a8",
+  storageBucket: "gaonbazaar-297a8.firebasestorage.app",
+  messagingSenderId: "381925642784",
+  appId: "1:381925642784:web:72c4acd4ac69c6605a6245"
 };
 
-const fb = initializeApp(firebaseConfig);
+const fb = initializeApp(firebaseConfig, "GaonBazaarShopkeeper");
 const auth = getAuth(fb);
 const db = getFirestore(fb);
-
-
-/* GLOBAL VARIABLES */
 
 let currentUser = null;
 let currentProfile = null;
@@ -123,1466 +94,669 @@ let orders = [];
 let tab = 'overview';
 let authTab = 'login';
 let registrationInProgress = false;
-
-const $ = id => document.getElementById(id);
-
-const money = n => '₹' + Number(n || 0).toLocaleString('en-IN',{
- maximumFractionDigits:2
-});
-
-const esc = v => String(v ?? '').replace(/[&<>"']/g,c=>({
- '&':'&amp;',
- '<':'&lt;',
- '>':'&gt;',
- '"':'&quot;',
- "'":'&#39;'
-}[c]));
-
-
-/* MESSAGE */
-
-function toast(message){
- $('toast').textContent = message;
- $('toast').classList.remove('hidden');
-
- clearTimeout(toast.t);
-
- toast.t = setTimeout(()=>{
-  $('toast').classList.add('hidden');
- },3500);
-}
-
-
-/* ERROR HANDLING */
-
-function err(e){
- console.error(e);
-
- const messages = {
-  'auth/invalid-email':'Valid email address enter karein.',
-  'auth/user-not-found':'Account nahi mila. Pehle registration karein.',
-  'auth/wrong-password':'Password galat hai.',
-  'auth/invalid-credential':'Email ya password galat hai.',
-  'auth/email-already-in-use':'Is email se account pehle se bana hua hai.',
-  'auth/weak-password':'Password kam se kam 6 characters ka hona chahiye.',
-  'auth/too-many-requests':'Bahut attempts hue. Thodi der baad try karein.',
-  'auth/operation-not-allowed':'Firebase Console mein Email/Password sign-in enable karein.',
-  'auth/network-request-failed':'Internet connection check karein.',
-  'permission-denied':'Firestore permission denied. Rules check karein.',
-  'unavailable':'Firebase server se connection nahi ho raha.'
- };
-
- toast(messages[e.code] || e.message || 'Kuch galat hua. Console check karein.');
-}
-
-
-/* AUTH SCREEN */
-
-function renderAuth(){
-
- $('logout-btn').classList.add('hidden');
- $('header-shop').textContent = 'Shopkeeper Portal';
-
- $('app').innerHTML = `
- <div class="auth-wrap">
- <section class="panel w-full max-w-lg p-5 sm:p-7">
-
- <div class="w-12 h-12 rounded-2xl bg-green-800 text-white flex items-center justify-center text-xl mb-4">
- <i class="fa-solid fa-store"></i>
- </div>
-
- <p class="text-xs font-extrabold text-green-700 uppercase tracking-wider">
- GaonBazaar Shopkeeper
- </p>
-
- <h1 class="text-2xl font-extrabold mt-1">Welcome to your shop</h1>
-
- <p class="text-sm text-slate-500 mt-2">
- Manage your shop, products and orders from one place.
- </p>
-
- <div class="grid grid-cols-2 gap-2 mt-6">
- <button id="login-tab" onclick="showAuthTab('login')" class="btn-primary rounded-xl py-2.5 text-sm font-bold">
- Login
- </button>
-
- <button id="register-tab" onclick="showAuthTab('register')" class="rounded-xl border py-2.5 text-sm font-bold">
- Create account
- </button>
- </div>
-
- <div id="auth-form" class="mt-5"></div>
-
- <p class="text-[11px] text-slate-400 mt-5">
- Secure Firebase Email & Password Authentication.
- </p>
-
- </section>
- </div>
- `;
-
- showAuthTab('login');
-}
-
-
-/* LOGIN / REGISTER FORM */
-
-window.showAuthTab = t => {
-
- authTab = t;
-
- $('login-tab').className =
- t === 'login'
- ? 'btn-primary rounded-xl py-2.5 text-sm font-bold'
- : 'rounded-xl border py-2.5 text-sm font-bold';
-
- $('register-tab').className =
- t === 'register'
- ? 'btn-primary rounded-xl py-2.5 text-sm font-bold'
- : 'rounded-xl border py-2.5 text-sm font-bold';
-
-
- const extra = t === 'register' ? `
-
- <div class="grid sm:grid-cols-2 gap-3">
-
- <label class="text-xs font-bold">
- Owner name
- <input id="reg-owner" class="field mt-1.5" required placeholder="Full name">
- </label>
-
- <label class="text-xs font-bold">
- Shop name
- <input id="reg-shop" class="field mt-1.5" required placeholder="Shop name">
- </label>
-
- </div>
-
- <label class="block text-xs font-bold">
- Shop address
- <textarea id="reg-address" class="field mt-1.5 min-h-20" required placeholder="Full shop address"></textarea>
- </label>
-
- <label class="block text-xs font-bold">
- Shop category
- <select id="reg-category" class="field mt-1.5">
- <option>Grocery</option>
- <option>Vegetables</option>
- <option>Dairy</option>
- <option>Fruits</option>
- <option>Other</option>
- </select>
- </label>
-
- <label class="block text-xs font-bold">
- Mobile number
- <input id="reg-phone" class="field mt-1.5" type="tel" inputmode="numeric" maxlength="10" placeholder="10-digit mobile number">
- </label>
-
- ` : '';
-
-
- $('auth-form').innerHTML = `
-
- <form class="space-y-3" onsubmit="handleAuth(event)">
-
- ${extra}
-
- <label class="block text-xs font-bold">
- Email address
- <input
- id="auth-email"
- class="field mt-1.5"
- type="email"
- autocomplete="email"
- required
- placeholder="example@email.com">
- </label>
-
- <label class="block text-xs font-bold">
- Password
- <input
- id="auth-password"
- class="field mt-1.5"
- type="password"
- autocomplete="${t==='login'?'current-password':'new-password'}"
- minlength="6"
- required
- placeholder="Minimum 6 characters">
- </label>
-
- <button id="auth-submit" type="submit" class="btn-primary w-full rounded-xl py-3 font-extrabold">
- ${t==='register'?'Create Shopkeeper Account':'Login to your shop'}
- </button>
-
- </form>
-
- `;
-
-};
-
-
-/* EMAIL AUTH */
-
-window.handleAuth = async e => {
-
- e.preventDefault();
-
- const email = $('auth-email').value.trim().toLowerCase();
- const password = $('auth-password').value;
-
- if(!email || password.length < 6){
-  return toast('Valid email aur minimum 6-character password enter karein.');
- }
-
- const button = $('auth-submit');
- button.disabled = true;
- button.textContent = 'Please wait...';
-
- try{
-
-  if(authTab === 'login'){
-
-   await signInWithEmailAndPassword(auth,email,password);
-
-  }else{
-
-   const owner = $('reg-owner').value.trim();
-   const shopName = $('reg-shop').value.trim();
-   const address = $('reg-address').value.trim();
-   const phone = $('reg-phone').value.trim();
-   const category = $('reg-category').value;
-
-   if(!owner || !shopName || !address){
-    throw new Error('Owner name, shop name aur address bharna zaroori hai.');
-   }
-
-   if(phone && !/^[6-9]\d{9}$/.test(phone)){
-    throw new Error('Valid 10-digit Indian mobile number enter karein.');
-   }
-
-   registrationInProgress = true;
-
-   const result = await createUserWithEmailAndPassword(
-    auth,
-    email,
-    password
-   );
-
-   const uid = result.user.uid;
-
-   const shopId = 'GBS-' + uid.slice(0,8).toUpperCase();
-
-   const userData = {
-    uid,
-    role:'shopkeeper',
-    email,
-    phone,
-    name:owner,
-    ownerName:owner,
-    shopId,
-    status:'Pending Approval',
-    createdAt:serverTimestamp()
-   };
-
-   const shopData = {
-    shopId,
-    ownerUid:uid,
-    ownerName:owner,
-    name:shopName,
-    shopName,
-    email,
-    phone,
-    address,
-    category,
-    status:'Pending Approval',
-    createdAt:serverTimestamp()
-   };
-
-   /*
-    IMPORTANT:
-    User document pehle create hota hai.
-    Uske baad shop document create hota hai.
-    Isse Firestore Rules ka isShopkeeperFor()
-    check kaam kar sakega.
-   */
-
-   await setDoc(doc(db,'users',uid),userData);
-
-   await setDoc(doc(db,'shops',shopId),shopData);
-
-   currentUser = result.user;
-
-   currentProfile = {
-    ...userData,
-    ...shopData,
-    uid,
-    shopId
-   };
-
-   registrationInProgress = false;
-
-   toast('Shopkeeper account successfully created.');
-
-   statusScreen();
-
-  }
-
- }catch(error){
-
-  registrationInProgress = false;
-
-  err(error);
-
-  console.error('Authentication error:',error);
-
- }finally{
-
-  if($('auth-submit')){
-   $('auth-submit').disabled = false;
-   $('auth-submit').textContent =
-    authTab==='register'
-    ? 'Create Shopkeeper Account'
-    : 'Login to your shop';
-  }
-
- }
-
-};
-
-
-/* LOAD PROFILE */
-
 let profileLoadInFlight = null;
 
-/* PROFILE ERROR SCREEN (RETRY INSTEAD OF INSTANT LOGOUT) */
+const $ = id => document.getElementById(id);
+const money = n => '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+}[c]));
 
-function renderProfileError(error, uid){
+function toast(message) {
+  $('toast').textContent = message;
+  $('toast').classList.remove('hidden');
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => $('toast').classList.add('hidden'), 3500);
+}
 
- $('logout-btn').classList.remove('hidden');
- $('header-shop').textContent = 'Shopkeeper Portal';
+function err(e) {
+  console.error(e);
+  const messages = {
+    'auth/invalid-email': 'Valid email address enter karein.',
+    'auth/user-not-found': 'Account nahi mila. Pehle registration karein.',
+    'auth/wrong-password': 'Password galat hai.',
+    'auth/invalid-credential': 'Email ya password galat hai.',
+    'auth/email-already-in-use': 'Is email se account pehle se bana hua hai.',
+    'auth/weak-password': 'Password kam se kam 6 characters ka hona chahiye.',
+    'auth/too-many-requests': 'Bahut attempts hue. Thodi der baad try karein.',
+    'auth/operation-not-allowed': 'Firebase Console mein Email/Password sign-in enable karein.',
+    'auth/network-request-failed': 'Internet connection check karein.',
+    'permission-denied': 'Firestore permission denied. Rules check karein.',
+    'unavailable': 'Firebase server se connection nahi ho raha.'
+  };
+  toast(messages[e.code] || e.message || 'Kuch galat hua. Console check karein.');
+}
 
- const code = error?.code || '';
- const isTransient =
-  code === 'permission-denied' ||
-  code === 'unavailable' ||
-  code === 'network-request-failed' ||
-  code === 'deadline-exceeded' ||
-  /network|permission|offline|unavailable|missing/i.test(error?.message || '');
+function renderAuth() {
+  $('logout-btn').classList.add('hidden');
+  $('header-shop').textContent = 'Shopkeeper Portal';
 
- $('app').innerHTML = `
- <div class="auth-wrap">
- <section class="panel max-w-lg w-full p-7 text-center">
+  $('app').innerHTML = `
+    <div class="auth-wrap">
+      <section class="panel w-full max-w-lg p-5 sm:p-7">
+        <div class="w-12 h-12 rounded-2xl bg-green-800 text-white flex items-center justify-center text-xl mb-4">
+          <i class="fa-solid fa-store"></i>
+        </div>
+        <p class="text-xs font-extrabold text-green-700 uppercase tracking-wider">GaonBazaar Shopkeeper</p>
+        <h1 class="text-2xl font-extrabold mt-1">Welcome to your shop</h1>
+        <p class="text-sm text-slate-500 mt-2">Manage your shop, products and orders from one place.</p>
 
- <div class="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-3xl mx-auto">
- <i class="fa-solid ${isTransient ? 'fa-wifi' : 'fa-circle-exclamation'}"></i>
- </div>
+        <div class="grid grid-cols-2 gap-2 mt-6">
+          <button id="login-tab" onclick="showAuthTab('login')" class="btn-primary rounded-xl py-2.5 text-sm font-bold">Login</button>
+          <button id="register-tab" onclick="showAuthTab('register')" class="rounded-xl border py-2.5 text-sm font-bold">Create account</button>
+        </div>
 
- <h1 class="text-2xl font-extrabold mt-4">
- ${isTransient ? 'Could not load shop profile' : 'Profile check issue'}
- </h1>
+        <div id="auth-form" class="mt-5"></div>
+        <p class="text-[11px] text-slate-400 mt-5">Secure Firebase Email & Password Authentication.</p>
+      </section>
+    </div>
+  `;
+  showAuthTab('login');
+}
 
- <p class="text-sm text-slate-500 mt-2">
- ${esc(error?.message || 'Unable to verify your shopkeeper profile right now.')}
- </p>
+window.showAuthTab = t => {
+  authTab = t;
+  $('login-tab').className = t === 'login' ? 'btn-primary rounded-xl py-2.5 text-sm font-bold' : 'rounded-xl border py-2.5 text-sm font-bold';
+  $('register-tab').className = t === 'register' ? 'btn-primary rounded-xl py-2.5 text-sm font-bold' : 'rounded-xl border py-2.5 text-sm font-bold';
 
- ${code ? `<p class="text-[11px] font-mono text-slate-400 mt-2">Code: ${esc(code)}</p>` : ''}
+  const extra = t === 'register' ? `
+    <div class="grid sm:grid-cols-2 gap-3">
+      <label class="text-xs font-bold">Owner name<input id="reg-owner" class="field mt-1.5" required placeholder="Full name"></label>
+      <label class="text-xs font-bold">Shop name<input id="reg-shop" class="field mt-1.5" required placeholder="Shop name"></label>
+    </div>
+    <label class="block text-xs font-bold">Shop address<textarea id="reg-address" class="field mt-1.5 min-h-20" required placeholder="Full shop address"></textarea></label>
+    <label class="block text-xs font-bold">Shop category
+      <select id="reg-category" class="field mt-1.5">
+        <option>Grocery</option><option>Vegetables</option><option>Dairy</option><option>Fruits</option><option>Other</option>
+      </select>
+    </label>
+    <label class="block text-xs font-bold">Mobile number<input id="reg-phone" class="field mt-1.5" type="tel" inputmode="numeric" maxlength="10" placeholder="10-digit mobile number"></label>
+  ` : '';
 
- <div class="flex flex-wrap justify-center gap-3 mt-6">
- <button onclick="retryProfileLoad('${esc(uid || '')}')" class="btn-primary rounded-xl px-5 py-3 text-sm font-extrabold">
- <i class="fa-solid fa-rotate-right mr-1.5"></i>Retry
- </button>
- <button onclick="logoutShopkeeper()" class="rounded-xl border px-5 py-3 text-sm font-bold">
- Logout
- </button>
- </div>
+  $('auth-form').innerHTML = `
+    <form class="space-y-3" onsubmit="handleAuth(event)">
+      ${extra}
+      <label class="block text-xs font-bold">Email address<input id="auth-email" class="field mt-1.5" type="email" autocomplete="email" required placeholder="example@email.com"></label>
+      <label class="block text-xs font-bold">Password<input id="auth-password" class="field mt-1.5" type="password" autocomplete="${t === 'login' ? 'current-password' : 'new-password'}" minlength="6" required placeholder="Minimum 6 characters"></label>
+      <button id="auth-submit" type="submit" class="btn-primary w-full rounded-xl py-3 font-extrabold">${t === 'register' ? 'Create Shopkeeper Account' : 'Login to your shop'}</button>
+    </form>
+  `;
+};
 
- </section>
- </div>
- `;
+window.handleAuth = async e => {
+  e.preventDefault();
+  const email = $('auth-email').value.trim().toLowerCase();
+  const password = $('auth-password').value;
+  if (!email || password.length < 6) return toast('Valid email aur minimum 6-character password enter karein.');
 
+  const button = $('auth-submit');
+  button.disabled = true;
+  button.textContent = 'Please wait...';
+
+  try {
+    if (authTab === 'login') {
+      await signInWithEmailAndPassword(auth, email, password);
+    } else {
+      const owner = $('reg-owner').value.trim();
+      const shopName = $('reg-shop').value.trim();
+      const address = $('reg-address').value.trim();
+      const phone = $('reg-phone').value.trim();
+      const category = $('reg-category').value;
+
+      if (!owner || !shopName || !address) throw new Error('Owner name, shop name aur address bharna zaroori hai.');
+      if (phone && !/^[6-9]\d{9}$/.test(phone)) throw new Error('Valid 10-digit Indian mobile number enter karein.');
+
+      registrationInProgress = true;
+      const result = await createUserWithEmailAndPassword(auth, email, password);
+      const uid = result.user.uid;
+      const shopId = 'GBS-' + uid.slice(0, 8).toUpperCase();
+
+      const userData = { uid, role: 'shopkeeper', email, phone, name: owner, ownerName: owner, shopId, status: 'Pending Approval', createdAt: serverTimestamp() };
+      const shopData = { shopId, ownerUid: uid, ownerName: owner, name: shopName, shopName, email, phone, address, category, status: 'Pending Approval', createdAt: serverTimestamp() };
+
+      await setDoc(doc(db, 'users', uid), userData);
+      await setDoc(doc(db, 'shops', shopId), shopData);
+
+      currentUser = result.user;
+      currentProfile = { ...userData, ...shopData, uid, shopId };
+      registrationInProgress = false;
+      toast('Shopkeeper account successfully created.');
+      statusScreen();
+    }
+  } catch (error) {
+    registrationInProgress = false;
+    err(error);
+  } finally {
+    if ($('auth-submit')) {
+      $('auth-submit').disabled = false;
+      $('auth-submit').textContent = authTab === 'register' ? 'Create Shopkeeper Account' : 'Login to your shop';
+    }
+  }
+};
+
+function renderProfileError(error, uid) {
+  $('logout-btn').classList.remove('hidden');
+  $('header-shop').textContent = 'Shopkeeper Portal';
+  const code = error?.code || '';
+  const isTransient = code === 'permission-denied' || code === 'unavailable' || code === 'network-request-failed' || code === 'deadline-exceeded' || /network|permission|offline|unavailable|missing/i.test(error?.message || '');
+
+  $('app').innerHTML = `
+    <div class="auth-wrap">
+      <section class="panel max-w-lg w-full p-7 text-center">
+        <div class="w-16 h-16 rounded-2xl ${isTransient ? 'bg-amber-50 text-amber-600' : 'bg-red-50 text-red-600'} flex items-center justify-center text-3xl mx-auto">
+          <i class="fa-solid ${isTransient ? 'fa-wifi' : 'fa-circle-exclamation'}"></i>
+        </div>
+        <h1 class="text-2xl font-extrabold mt-4">${isTransient ? 'Could not load shop profile' : 'Profile check issue'}</h1>
+        <p class="text-sm text-slate-500 mt-2">${esc(error?.message || 'Unable to verify your shopkeeper profile right now.')}</p>
+        ${code ? `<p class="text-[11px] font-mono text-slate-400 mt-2">Code: ${esc(code)}</p>` : ''}
+        <div class="flex flex-wrap justify-center gap-3 mt-6">
+          <button onclick="retryProfileLoad('${esc(uid || '')}')" class="btn-primary rounded-xl px-5 py-3 text-sm font-extrabold"><i class="fa-solid fa-rotate-right mr-1.5"></i>Retry</button>
+          <button onclick="logoutShopkeeper()" class="rounded-xl border px-5 py-3 text-sm font-bold">Logout</button>
+        </div>
+      </section>
+    </div>
+  `;
 }
 
 window.retryProfileLoad = async uid => {
-
- const targetUid = uid || auth.currentUser?.uid || currentUser?.uid;
- if(!targetUid){
-  renderAuth();
-  return;
- }
-
- $('app').innerHTML = `
- <div class="panel p-8 text-center">
- <i class="fa-solid fa-spinner fa-spin text-2xl text-green-700"></i>
- <p class="text-sm text-slate-500 mt-3">Retrying profile load...</p>
- </div>
- `;
-
- try{
-  await loadProfile(targetUid);
- }catch(e){
-  console.error('Retry profile error:', e);
-  err(e);
-  renderProfileError(e, targetUid);
- }
-
+  const targetUid = uid || auth.currentUser?.uid || currentUser?.uid;
+  if (!targetUid) return renderAuth();
+  $('app').innerHTML = `<div class="panel p-8 text-center"><i class="fa-solid fa-spinner fa-spin text-2xl text-green-700"></i><p class="text-sm text-slate-500 mt-3">Retrying profile load...</p></div>`;
+  try {
+    await loadProfile(targetUid);
+  } catch (e) {
+    err(e);
+    renderProfileError(e, targetUid);
+  }
 };
 
+async function loadProfile(uid) {
+  if (profileLoadInFlight) return profileLoadInFlight;
 
-/* LOAD PROFILE */
+  profileLoadInFlight = (async () => {
+    const userSnap = await getDoc(doc(db, 'users', uid));
+    if (!userSnap.exists()) {
+      const e = new Error('Shopkeeper profile not found. Complete registration or check your account.');
+      e.code = 'profile-missing';
+      throw e;
+    }
 
-async function loadProfile(uid){
+    const userData = userSnap.data();
+    if (userData.role !== 'shopkeeper') {
+      await signOut(auth);
+      throw new Error('This account is not authorized for the Shopkeeper App.');
+    }
 
- if(profileLoadInFlight){
-  return profileLoadInFlight;
- }
+    if (!userData.shopId) {
+      const e = new Error('Shop ID is missing on your profile. Contact support or retry.');
+      e.code = 'shopid-missing';
+      throw e;
+    }
 
- profileLoadInFlight = (async () => {
+    const shopSnap = await getDoc(doc(db, 'shops', userData.shopId));
+    if (!shopSnap.exists()) {
+      const e = new Error('Shop record not found yet. Retry or contact admin.');
+      e.code = 'shop-missing';
+      throw e;
+    }
 
-  const userSnap = await getDoc(doc(db,'users',uid));
+    const shopData = shopSnap.data();
+    if (shopData.ownerUid !== uid) {
+      await signOut(auth);
+      throw new Error('Shop ownership verification failed.');
+    }
 
-  if(!userSnap.exists()){
-   const e = new Error('Shopkeeper profile not found. Complete registration or check your account.');
-   e.code = 'profile-missing';
-   throw e;
+    currentProfile = { ...userData, ...shopData, uid, shopId: userData.shopId };
+    statusScreen();
+  })();
+
+  try {
+    return await profileLoadInFlight;
+  } finally {
+    profileLoadInFlight = null;
   }
-
-  const userData = userSnap.data();
-
-  if(userData.role !== 'shopkeeper'){
-   await signOut(auth);
-   throw new Error('This account is not authorized for the Shopkeeper App.');
-  }
-
-  if(!userData.shopId){
-   const e = new Error('Shop ID is missing on your profile. Contact support or retry.');
-   e.code = 'shopid-missing';
-   throw e;
-  }
-
-  const shopSnap = await getDoc(doc(db,'shops',userData.shopId));
-
-  if(!shopSnap.exists()){
-   const e = new Error('Shop record not found yet. Retry or contact admin.');
-   e.code = 'shop-missing';
-   throw e;
-  }
-
-  const shopData = shopSnap.data();
-
-  if(shopData.ownerUid !== uid){
-   await signOut(auth);
-   throw new Error('Shop ownership verification failed.');
-  }
-
-  currentProfile = {
-   ...userData,
-   ...shopData,
-   uid,
-   shopId:userData.shopId
-  };
-
-  statusScreen();
-
- })();
-
- try{
-  return await profileLoadInFlight;
- }finally{
-  profileLoadInFlight = null;
- }
-
 }
 
-
-/* AUTH STATE LISTENER */
-
-onAuthStateChanged(auth,async user=>{
-
- if(!user){
-
-  currentUser=null;
-  currentProfile=null;
-  profileLoadInFlight=null;
-
-  if(!registrationInProgress){
-   renderAuth();
+onAuthStateChanged(auth, async user => {
+  if (!user) {
+    currentUser = null;
+    currentProfile = null;
+    profileLoadInFlight = null;
+    if (!registrationInProgress) renderAuth();
+    return;
   }
 
-  return;
+  currentUser = user;
+  if (registrationInProgress) return;
 
- }
-
- currentUser=user;
-
- if(registrationInProgress)return;
-
- try{
-
-  await loadProfile(user.uid);
-
- }catch(e){
-
-  console.error('Profile loading error:',e);
-
-  err(e);
-
-  if(auth.currentUser){
-   renderProfileError(e, user.uid);
-  }else{
-   renderAuth();
+  try {
+    await loadProfile(user.uid);
+  } catch (e) {
+    err(e);
+    if (auth.currentUser) renderProfileError(e, user.uid);
+    else renderAuth();
   }
-
- }
-
 });
 
-function statusScreen(){
+function statusScreen() {
+  const st = String(currentProfile.status || 'Pending Approval').toLowerCase();
+  $('header-shop').textContent = currentProfile.shopName || currentProfile.name || 'My Shop';
 
- const st = String(currentProfile.status || 'Pending Approval').toLowerCase();
+  if (st === 'approved' || st === 'active') {
+    loadDashboard();
+    return;
+  }
 
- $('header-shop').textContent = currentProfile.shopName || currentProfile.name || 'My Shop';
-
- if(st === 'approved' || st === 'active'){
-  loadDashboard();
-  return;
- }
-
- $('logout-btn').classList.remove('hidden');
-
- const rejected = st === 'rejected';
-
- $('app').innerHTML = `
-
- <div class="auth-wrap">
-
- <section class="panel max-w-lg w-full p-7 text-center">
-
- <div class="w-16 h-16 rounded-2xl ${rejected?'bg-red-50 text-red-600':'bg-amber-50 text-amber-600'} flex items-center justify-center text-3xl mx-auto">
-
- <i class="fa-solid ${rejected?'fa-circle-xmark':'fa-hourglass-half'}"></i>
-
- </div>
-
- <h1 class="text-2xl font-extrabold mt-4">
- ${rejected?'Application not approved':'Application under review'}
- </h1>
-
- <p class="text-sm text-slate-500 mt-2">
- ${rejected
- ? 'Your registration was not approved. Contact GaonBazaar support.'
- : 'Shop account create ho gaya hai. Admin approval ke baad products aur orders manage kar sakenge.'}
- </p>
-
- <div class="bg-slate-50 rounded-xl p-4 text-left mt-5 text-sm space-y-2">
-
- <p><b>Shop:</b> ${esc(currentProfile.shopName)}</p>
- <p><b>Shop ID:</b> ${esc(currentProfile.shopId)}</p>
- <p><b>Email:</b> ${esc(currentProfile.email)}</p>
- <p><b>Mobile:</b> ${esc(currentProfile.phone || 'Not provided')}</p>
- <p><b>Status:</b> ${esc(currentProfile.status)}</p>
-
- </div>
-
- <button onclick="logoutShopkeeper()" class="mt-5 rounded-xl border px-5 py-3 text-sm font-bold">
- Logout
- </button>
-
- </section>
- </div>
-
- `;
-
-}
-
-
-/* ACCESS CHECK */
-
-function allowed(){
-
- if(!currentUser || !currentProfile?.shopId){
-  toast('Please login again.');
-  return false;
- }
-
- return true;
-
-}
-
-
-/* DASHBOARD */
-
-async function loadDashboard(){
-
- $('logout-btn').classList.remove('hidden');
-
- $('header-shop').textContent = currentProfile.shopName || 'My Shop';
-
- $('app').innerHTML = `
- <div class="panel p-8 text-center">
- <i class="fa-solid fa-spinner fa-spin text-2xl text-green-700"></i>
- <p class="text-sm text-slate-500 mt-3">Loading your shop...</p>
- </div>
- `;
-
- try{
-
-  const uid = currentUser.uid;
-  const sid = currentProfile.shopId;
-
-  const [ps,os] = await Promise.all([
-
-   getDocs(query(
-    collection(db,'products'),
-    where('ownerUid','==',uid)
-   )),
-
-   getDocs(query(
-    collection(db,'orders'),
-    where('shopId','==',sid)
-   ))
-
-  ]);
-
-  products = ps.docs.map(d=>({id:d.id,...d.data()}));
-
-  orders = os.docs.map(d=>({id:d.id,...d.data()}));
-
-  renderDashboard();
-
- }catch(e){
-
-  err(e);
+  $('logout-btn').classList.remove('hidden');
+  const rejected = st === 'rejected';
 
   $('app').innerHTML = `
-  <div class="panel p-8 text-center">
-  <h2 class="font-extrabold">Data load nahi hua</h2>
-  <p class="text-sm text-slate-500 mt-2">Firestore Rules aur collections check karein.</p>
-  <button onclick="loadDashboard()" class="btn-primary rounded-xl px-4 py-2 mt-4">Retry</button>
-  </div>
+    <div class="auth-wrap">
+      <section class="panel max-w-lg w-full p-7 text-center">
+        <div class="w-16 h-16 rounded-2xl ${rejected ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'} flex items-center justify-center text-3xl mx-auto">
+          <i class="fa-solid ${rejected ? 'fa-circle-xmark' : 'fa-hourglass-half'}"></i>
+        </div>
+        <h1 class="text-2xl font-extrabold mt-4">${rejected ? 'Application not approved' : 'Application under review'}</h1>
+        <p class="text-sm text-slate-500 mt-2">${rejected ? 'Your registration was not approved. Contact GaonBazaar support.' : 'Shop account create ho gaya hai. Admin approval ke baad products aur orders manage kar sakenge.'}</p>
+        <div class="bg-slate-50 rounded-xl p-4 text-left mt-5 text-sm space-y-2">
+          <p><b>Shop:</b> ${esc(currentProfile.shopName)}</p>
+          <p><b>Shop ID:</b> ${esc(currentProfile.shopId)}</p>
+          <p><b>Email:</b> ${esc(currentProfile.email)}</p>
+          <p><b>Mobile:</b> ${esc(currentProfile.phone || 'Not provided')}</p>
+          <p><b>Status:</b> ${esc(currentProfile.status)}</p>
+        </div>
+        <button onclick="logoutShopkeeper()" class="mt-5 rounded-xl border px-5 py-3 text-sm font-bold">Logout</button>
+      </section>
+    </div>
   `;
-
- }
-
 }
 
-
-/* DASHBOARD COMPONENTS */
-
-function stat(label,value,icon,tone){
-
- const c = {
-  blue:'bg-blue-50 text-blue-700',
-  green:'bg-green-50 text-green-700',
-  amber:'bg-amber-50 text-amber-700',
-  purple:'bg-violet-50 text-violet-700'
- };
-
- return `
- <div class="panel p-4">
- <div class="w-9 h-9 rounded-xl ${c[tone]} flex items-center justify-center">
- <i class="fa-solid ${icon}"></i>
- </div>
- <p class="text-xs text-slate-500 mt-3">${label}</p>
- <p class="text-2xl font-extrabold mt-0.5">${value}</p>
- </div>
- `;
-
+function allowed() {
+  if (!currentUser || !currentProfile?.shopId) {
+    toast('Please login again.');
+    return false;
+  }
+  return true;
 }
 
+async function loadDashboard() {
+  $('logout-btn').classList.remove('hidden');
+  $('header-shop').textContent = currentProfile.shopName || 'My Shop';
+  $('app').innerHTML = `<div class="panel p-8 text-center"><i class="fa-solid fa-spinner fa-spin text-2xl text-green-700"></i><p class="text-sm text-slate-500 mt-3">Loading your shop...</p></div>`;
 
-function renderDashboard(){
+  try {
+    const uid = currentUser.uid;
+    const sid = currentProfile.shopId;
 
- const delivered = orders.filter(o=>o.status==='Delivered');
+    const [ps, os] = await Promise.all([
+      getDocs(query(collection(db, 'products'), where('ownerUid', '==', uid))),
+      getDocs(query(collection(db, 'orders'), where('shopId', '==', sid)))
+    ]);
 
- const active = orders.filter(o=>!['Delivered','Cancelled'].includes(o.status));
-
- $('app').innerHTML = `
-
- <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-5">
-
- <div>
- <p class="text-xs text-green-700 font-bold uppercase tracking-wider">Shop workspace</p>
- <h1 class="text-2xl font-extrabold mt-1">${esc(currentProfile.shopName)}</h1>
- <p class="text-sm text-slate-500 mt-1">
- ${esc(currentProfile.address||'')} · Shop ID: ${esc(currentProfile.shopId)}
- </p>
- </div>
-
- <span class="rounded-full bg-green-50 text-green-800 px-3 py-2 text-xs font-bold">
- Approved shop
- </span>
-
- </div>
-
- <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-
- ${stat('Products',products.length,'fa-box','blue')}
- ${stat('Active orders',active.length,'fa-clock','amber')}
- ${stat('Delivered',delivered.length,'fa-check-circle','green')}
- ${stat('Low stock',products.filter(p=>Number(p.stock||0)<=5).length,'fa-triangle-exclamation','purple')}
-
- </div>
-
- <div class="flex gap-2 overflow-x-auto pb-3 mb-4">
-
- <button onclick="setTab('overview')" class="nav-btn ${tab==='overview'?'active':''} rounded-xl px-4 py-2.5 text-xs font-bold">Overview</button>
-
- <button onclick="setTab('products')" class="nav-btn ${tab==='products'?'active':''} rounded-xl px-4 py-2.5 text-xs font-bold">My Products</button>
-
- <button onclick="setTab('orders')" class="nav-btn ${tab==='orders'?'active':''} rounded-xl px-4 py-2.5 text-xs font-bold">Orders (${active.length})</button>
-
- </div>
-
- <div id="dashboard-content"></div>
-
- `;
-
- renderTab();
-
+    products = ps.docs.map(d => ({ id: d.id, ...d.data() }));
+    orders = os.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderDashboard();
+  } catch (e) {
+    err(e);
+    $('app').innerHTML = `<div class="panel p-8 text-center"><h2 class="font-extrabold">Data load nahi hua</h2><p class="text-sm text-slate-500 mt-2">Firestore Rules aur collections check karein.</p><button onclick="loadDashboard()" class="btn-primary rounded-xl px-4 py-2 mt-4">Retry</button></div>`;
+  }
 }
 
+function stat(label, value, icon, tone) {
+  const c = {
+    blue: 'bg-blue-50 text-blue-700',
+    green: 'bg-green-50 text-green-700',
+    amber: 'bg-amber-50 text-amber-700',
+    purple: 'bg-violet-50 text-violet-700'
+  };
+  return `
+    <div class="panel p-4">
+      <div class="w-9 h-9 rounded-xl ${c[tone]} flex items-center justify-center"><i class="fa-solid ${icon}"></i></div>
+      <p class="text-xs text-slate-500 mt-3">${label}</p>
+      <p class="text-2xl font-extrabold mt-0.5">${value}</p>
+    </div>
+  `;
+}
+
+function renderDashboard() {
+  const delivered = orders.filter(o => o.status === 'Delivered');
+  const active = orders.filter(o => !['Delivered', 'Cancelled'].includes(o.status));
+
+  $('app').innerHTML = `
+    <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-5">
+      <div>
+        <p class="text-xs text-green-700 font-bold uppercase tracking-wider">Shop workspace</p>
+        <h1 class="text-2xl font-extrabold mt-1">${esc(currentProfile.shopName)}</h1>
+        <p class="text-sm text-slate-500 mt-1">${esc(currentProfile.address || '')} · Shop ID: ${esc(currentProfile.shopId)}</p>
+      </div>
+      <span class="rounded-full bg-green-50 text-green-800 px-3 py-2 text-xs font-bold">Approved shop</span>
+    </div>
+
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      ${stat('Products', products.length, 'fa-box', 'blue')}
+      ${stat('Active orders', active.length, 'fa-clock', 'amber')}
+      ${stat('Delivered', delivered.length, 'fa-check-circle', 'green')}
+      ${stat('Low stock', products.filter(p => Number(p.stock || 0) <= 5).length, 'fa-triangle-exclamation', 'purple')}
+    </div>
+
+    <div class="flex gap-2 overflow-x-auto pb-3 mb-4">
+      <button onclick="setTab('overview')" class="nav-btn ${tab === 'overview' ? 'active' : ''} rounded-xl px-4 py-2.5 text-xs font-bold">Overview</button>
+      <button onclick="setTab('products')" class="nav-btn ${tab === 'products' ? 'active' : ''} rounded-xl px-4 py-2.5 text-xs font-bold">My Products</button>
+      <button onclick="setTab('orders')" class="nav-btn ${tab === 'orders' ? 'active' : ''} rounded-xl px-4 py-2.5 text-xs font-bold">Orders (${active.length})</button>
+    </div>
+
+    <div id="dashboard-content"></div>
+  `;
+  renderTab();
+}
 
 window.setTab = t => {
- tab=t;
- renderDashboard();
+  tab = t;
+  renderDashboard();
 };
 
+function renderTab() {
+  const root = $('dashboard-content');
+  if (tab === 'products') root.innerHTML = productsView();
+  else if (tab === 'orders') root.innerHTML = ordersView();
+  else {
+    root.innerHTML = `
+      <div class="grid lg:grid-cols-2 gap-4">
+        <section class="panel p-5">
+          <h2 class="font-extrabold">Recent orders</h2>
+          <div class="space-y-3 mt-4">${orders.slice(0, 5).map(orderCard).join('') || '<p class="text-sm text-slate-500">Abhi koi order nahi hai.</p>'}</div>
+          <button onclick="setTab('orders')" class="text-green-800 text-xs font-bold mt-4">View all orders →</button>
+        </section>
+        <section class="panel p-5">
+          <h2 class="font-extrabold">Stock summary</h2>
+          <div class="space-y-3 mt-4">${products.slice(0, 6).map(p => `<div class="flex justify-between gap-3 text-sm border-b pb-2"><span>${esc(p.name)}</span><b>${Number(p.stock || 0)} ${esc(p.weight || 'units')}</b></div>`).join('') || '<p class="text-sm text-slate-500">No products added yet.</p>'}</div>
+          <button onclick="setTab('products')" class="text-green-800 text-xs font-bold mt-4">Manage products →</button>
+        </section>
+      </div>
+    `;
+  }
+}
 
-function renderTab(){
+function productsView() {
+  return `
+    <div class="space-y-4">
+      <section class="panel p-4">
+        <h2 class="font-extrabold">Add a new product</h2>
+        <p class="text-xs text-slate-500 mt-1 mb-4">Products are saved under your Shop ID only.</p>
+        <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <label class="text-xs font-bold">Product name *<input id="new-name" class="field mt-1.5" placeholder="Mustard Oil"></label>
+          <label class="text-xs font-bold">Local name<input id="new-local" class="field mt-1.5" placeholder="Optional"></label>
+          <label class="text-xs font-bold">Pack size / unit *<input id="new-weight" class="field mt-1.5" placeholder="1 kg, 1 L"></label>
+          <label class="text-xs font-bold">Category
+            <select id="new-category" class="field mt-1.5">
+              <option>Grocery</option><option>Vegetables</option><option>Dairy</option><option>Fruits</option><option>Snacks</option><option>Beverages</option><option>Household</option><option>Other</option>
+            </select>
+          </label>
+          <label class="text-xs font-bold">Selling price (₹) *<input id="new-price" class="field mt-1.5" type="number" min=".01" step=".01"></label>
+          <label class="text-xs font-bold">Available stock *<input id="new-stock" class="field mt-1.5" type="number" min="0" step="1"></label>
+        </div>
+        <button onclick="addProduct()" class="btn-primary rounded-xl px-5 py-3 text-xs font-extrabold mt-4">+ Save product</button>
+      </section>
 
- const root = $('dashboard-content');
-
- if(tab==='products'){
-  root.innerHTML = productsView();
- }
- else if(tab==='orders'){
-  root.innerHTML = ordersView();
- }
- else{
-
-  root.innerHTML = `
-
-  <div class="grid lg:grid-cols-2 gap-4">
-
-  <section class="panel p-5">
-
-  <h2 class="font-extrabold">Recent orders</h2>
-
-  <div class="space-y-3 mt-4">
-
-  ${orders.slice(0,5).map(orderCard).join('') || '<p class="text-sm text-slate-500">Abhi koi order nahi hai.</p>'}
-
-  </div>
-
-  <button onclick="setTab('orders')" class="text-green-800 text-xs font-bold mt-4">
-  View all orders →
-  </button>
-
-  </section>
-
-  <section class="panel p-5">
-
-  <h2 class="font-extrabold">Stock summary</h2>
-
-  <div class="space-y-3 mt-4">
-
-  ${products.slice(0,6).map(p=>`
-  <div class="flex justify-between gap-3 text-sm border-b pb-2">
-  <span>${esc(p.name)}</span>
-  <b>${Number(p.stock||0)} ${esc(p.weight||'units')}</b>
-  </div>
-  `).join('') || '<p class="text-sm text-slate-500">No products added yet.</p>'}
-
-  </div>
-
-  <button onclick="setTab('products')" class="text-green-800 text-xs font-bold mt-4">
-  Manage products →
-  </button>
-
-  </section>
-
-  </div>
-
+      <section class="panel p-4">
+        <div class="flex justify-between mb-4">
+          <div><h2 class="font-extrabold">My product catalogue</h2><p class="text-xs text-slate-500 mt-1">Update price, stock and visibility.</p></div>
+          <b class="text-xs text-slate-500">${products.length} products</b>
+        </div>
+        <input id="product-search" class="field mb-3" placeholder="Search products..." oninput="filterProducts(this.value)">
+        <div id="product-list">${productList(products)}</div>
+      </section>
+    </div>
   `;
-
- }
-
 }
 
-
-/* PRODUCTS */
-
-function productsView(){
-
- return `
-
- <div class="space-y-4">
-
- <section class="panel p-4">
-
- <h2 class="font-extrabold">Add a new product</h2>
-
- <p class="text-xs text-slate-500 mt-1 mb-4">
- Products are saved under your Shop ID only.
- </p>
-
- <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-
- <label class="text-xs font-bold">
- Product name *
- <input id="new-name" class="field mt-1.5" placeholder="Mustard Oil">
- </label>
-
- <label class="text-xs font-bold">
- Local name
- <input id="new-local" class="field mt-1.5" placeholder="Optional">
- </label>
-
- <label class="text-xs font-bold">
- Pack size / unit *
- <input id="new-weight" class="field mt-1.5" placeholder="1 kg, 1 L">
- </label>
-
- <label class="text-xs font-bold">
- Category
- <select id="new-category" class="field mt-1.5">
- <option>Grocery</option>
- <option>Vegetables</option>
- <option>Dairy</option>
- <option>Fruits</option>
- <option>Snacks</option>
- <option>Beverages</option>
- <option>Household</option>
- <option>Other</option>
- </select>
- </label>
-
- <label class="text-xs font-bold">
- Selling price (₹) *
- <input id="new-price" class="field mt-1.5" type="number" min=".01" step=".01">
- </label>
-
- <label class="text-xs font-bold">
- Available stock *
- <input id="new-stock" class="field mt-1.5" type="number" min="0" step="1">
- </label>
-
- </div>
-
- <button onclick="addProduct()" class="btn-primary rounded-xl px-5 py-3 text-xs font-extrabold mt-4">
- + Save product
- </button>
-
- </section>
-
- <section class="panel p-4">
-
- <div class="flex justify-between mb-4">
- <div>
- <h2 class="font-extrabold">My product catalogue</h2>
- <p class="text-xs text-slate-500 mt-1">Update price, stock and visibility.</p>
- </div>
- <b class="text-xs text-slate-500">${products.length} products</b>
- </div>
-
- <input id="product-search" class="field mb-3" placeholder="Search products..." oninput="filterProducts(this.value)">
-
- <div id="product-list">${productList(products)}</div>
-
- </section>
-
- </div>
-
- `;
-
+function productList(list) {
+  if (!list.length) return '<div class="text-center py-8 text-sm text-slate-500">No products found.</div>';
+  return `
+    <div class="space-y-2">
+      ${list.map(p => `
+        <article class="border border-slate-100 rounded-xl p-3">
+          <div class="flex flex-wrap items-center gap-3">
+            <div class="flex-1 min-w-[140px]">
+              <p class="font-extrabold text-sm">${esc(p.name)}</p>
+              <p class="text-[11px] text-slate-500 mt-1">${esc(p.localName || '')} ${esc(p.weight || '')} · ${esc(p.category || '')}</p>
+            </div>
+            <div class="text-right">
+              <p class="font-extrabold">${money(p.price)}</p>
+              <p class="text-[10px] text-slate-500">Stock: ${Number(p.stock || 0)}</p>
+            </div>
+          </div>
+          <div class="flex flex-wrap justify-between items-center gap-2 mt-3 pt-3 border-t">
+            <span class="text-[10px] font-bold ${p.active === false ? 'text-slate-400' : 'text-green-700'}">${p.active === false ? 'Hidden' : 'Visible to customers'}</span>
+            <div class="flex gap-2">
+              <button onclick="editProduct('${p.id}')" class="border rounded-lg px-3 py-2 text-[11px] font-bold">Edit</button>
+              <button onclick="toggleProduct('${p.id}',${p.active === false})" class="rounded-lg px-3 py-2 text-[11px] font-bold ${p.active === false ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-800'}">${p.active === false ? 'Publish' : 'Hide'}</button>
+              <button onclick="removeProduct('${p.id}')" class="rounded-lg bg-red-50 text-red-700 px-3 py-2 text-[11px] font-bold">Delete</button>
+            </div>
+          </div>
+        </article>
+      `).join('')}
+    </div>
+  `;
 }
-
-
-function productList(list){
-
- if(!list.length){
-  return '<div class="text-center py-8 text-sm text-slate-500">No products found.</div>';
- }
-
- return `
-
- <div class="space-y-2">
-
- ${list.map(p=>`
-
- <article class="border border-slate-100 rounded-xl p-3">
-
- <div class="flex flex-wrap items-center gap-3">
-
- <div class="flex-1 min-w-[140px]">
-
- <p class="font-extrabold text-sm">${esc(p.name)}</p>
-
- <p class="text-[11px] text-slate-500 mt-1">
- ${esc(p.localName||'')} ${esc(p.weight||'')} · ${esc(p.category||'')}
- </p>
-
- </div>
-
- <div class="text-right">
- <p class="font-extrabold">${money(p.price)}</p>
- <p class="text-[10px] text-slate-500">Stock: ${Number(p.stock||0)}</p>
- </div>
-
- </div>
-
- <div class="flex flex-wrap justify-between items-center gap-2 mt-3 pt-3 border-t">
-
- <span class="text-[10px] font-bold ${p.active===false?'text-slate-400':'text-green-700'}">
- ${p.active===false?'Hidden':'Visible to customers'}
- </span>
-
- <div class="flex gap-2">
-
- <button onclick="editProduct('${p.id}')" class="border rounded-lg px-3 py-2 text-[11px] font-bold">Edit</button>
-
- <button onclick="toggleProduct('${p.id}',${p.active===false})" class="rounded-lg px-3 py-2 text-[11px] font-bold ${p.active===false?'bg-green-50 text-green-800':'bg-amber-50 text-amber-800'}">
- ${p.active===false?'Publish':'Hide'}
- </button>
-
- <button onclick="removeProduct('${p.id}')" class="rounded-lg bg-red-50 text-red-700 px-3 py-2 text-[11px] font-bold">
- Delete
- </button>
-
- </div>
-
- </div>
-
- </article>
-
- `).join('')}
-
- </div>
-
- `;
-
-}
-
 
 window.filterProducts = t => {
-
- $('product-list').innerHTML = productList(
-  products.filter(p=>
-   (p.name+' '+(p.localName||'')).toLowerCase().includes(t.toLowerCase())
-  )
- );
-
+  $('product-list').innerHTML = productList(products.filter(p => (p.name + ' ' + (p.localName || '')).toLowerCase().includes(t.toLowerCase())));
 };
 
+window.addProduct = async () => {
+  if (!allowed()) return;
+  const name = $('new-name').value.trim();
+  const localName = $('new-local').value.trim();
+  const weight = $('new-weight').value.trim();
+  const category = $('new-category').value;
+  const price = Number($('new-price').value);
+  const stock = Number($('new-stock').value);
 
-/* ADD PRODUCT */
+  if (!name || !weight || $('new-price').value === '' || $('new-stock').value === '' || !Number.isFinite(price) || price <= 0 || !Number.isInteger(stock) || stock < 0) {
+    return toast('Product name, unit, valid price aur stock bharein.');
+  }
 
-window.addProduct = async()=>{
-
- if(!allowed())return;
-
- const name = $('new-name').value.trim();
- const localName = $('new-local').value.trim();
- const weight = $('new-weight').value.trim();
- const category = $('new-category').value;
- const price = Number($('new-price').value);
- const stock = Number($('new-stock').value);
-
- if(
-  !name ||
-  !weight ||
-  $('new-price').value==='' ||
-  $('new-stock').value==='' ||
-  !Number.isFinite(price) ||
-  price<=0 ||
-  !Number.isInteger(stock) ||
-  stock<0
- ){
-  return toast('Product name, unit, valid price aur stock bharein.');
- }
-
- try{
-
-  await addDoc(collection(db,'products'),{
-
-   shopId:currentProfile.shopId,
-
-   ownerUid:currentUser.uid,
-
-   shopName:currentProfile.shopName,
-
-   name,
-   localName,
-   weight,
-   category,
-   price,
-   stock,
-
-   active:stock>0,
-
-   createdAt:serverTimestamp(),
-   updatedAt:serverTimestamp()
-
-  });
-
-  toast('Product add ho gaya.');
-
-  await loadDashboard();
-
-  tab='products';
-  renderDashboard();
-
- }catch(e){
-  err(e);
- }
-
+  try {
+    await addDoc(collection(db, 'products'), {
+      shopId: currentProfile.shopId,
+      ownerUid: currentUser.uid,
+      shopName: currentProfile.shopName,
+      name, localName, weight, category, price, stock,
+      active: stock > 0,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+    toast('Product add ho gaya.');
+    await loadDashboard();
+    tab = 'products';
+    renderDashboard();
+  } catch (e) {
+    err(e);
+  }
 };
-
-
-/* EDIT PRODUCT */
 
 window.editProduct = id => {
-
- const p = products.find(x=>x.id===id);
- if(!p)return;
-
- $('modal-title').textContent='Edit product';
-
- $('modal-content').innerHTML = `
-
- <div class="space-y-3">
-
- <label class="block text-xs font-bold">
- Product name
- <input id="edit-name" class="field mt-1" value="${esc(p.name)}">
- </label>
-
- <label class="block text-xs font-bold">
- Local name
- <input id="edit-local" class="field mt-1" value="${esc(p.localName||'')}">
- </label>
-
- <label class="block text-xs font-bold">
- Pack size / unit
- <input id="edit-weight" class="field mt-1" value="${esc(p.weight||'')}">
- </label>
-
- <div class="grid grid-cols-2 gap-2">
-
- <label class="block text-xs font-bold">
- Price
- <input id="edit-price" class="field mt-1" type="number" min=".01" step=".01" value="${Number(p.price||0)}">
- </label>
-
- <label class="block text-xs font-bold">
- Stock
- <input id="edit-stock" class="field mt-1" type="number" min="0" step="1" value="${Number(p.stock||0)}">
- </label>
-
- </div>
-
- <button onclick="saveProductEdit('${id}')" class="btn-primary w-full rounded-xl py-3 font-bold">
- Save changes
- </button>
-
- </div>
-
- `;
-
- $('modal-overlay').classList.remove('hidden');
- $('modal-overlay').classList.add('flex');
-
+  const p = products.find(x => x.id === id);
+  if (!p) return;
+  $('modal-title').textContent = 'Edit product';
+  $('modal-content').innerHTML = `
+    <div class="space-y-3">
+      <label class="block text-xs font-bold">Product name<input id="edit-name" class="field mt-1" value="${esc(p.name)}"></label>
+      <label class="block text-xs font-bold">Local name<input id="edit-local" class="field mt-1" value="${esc(p.localName || '')}"></label>
+      <label class="block text-xs font-bold">Pack size / unit<input id="edit-weight" class="field mt-1" value="${esc(p.weight || '')}"></label>
+      <div class="grid grid-cols-2 gap-2">
+        <label class="block text-xs font-bold">Price<input id="edit-price" class="field mt-1" type="number" min=".01" step=".01" value="${Number(p.price || 0)}"></label>
+        <label class="block text-xs font-bold">Stock<input id="edit-stock" class="field mt-1" type="number" min="0" step="1" value="${Number(p.stock || 0)}"></label>
+      </div>
+      <button onclick="saveProductEdit('${id}')" class="btn-primary w-full rounded-xl py-3 font-bold">Save changes</button>
+    </div>
+  `;
+  $('modal-overlay').classList.remove('hidden');
+  $('modal-overlay').classList.add('flex');
 };
-
 
 window.saveProductEdit = async id => {
+  if (!allowed()) return;
+  const name = $('edit-name').value.trim();
+  const localName = $('edit-local').value.trim();
+  const weight = $('edit-weight').value.trim();
+  const price = Number($('edit-price').value);
+  const stock = Number($('edit-stock').value);
 
- if(!allowed())return;
+  if (!name || !weight || !Number.isFinite(price) || price <= 0 || !Number.isInteger(stock) || stock < 0) {
+    return toast('Product details check karein.');
+  }
 
- const name = $('edit-name').value.trim();
- const localName = $('edit-local').value.trim();
- const weight = $('edit-weight').value.trim();
- const price = Number($('edit-price').value);
- const stock = Number($('edit-stock').value);
-
- if(
-  !name ||
-  !weight ||
-  !Number.isFinite(price) ||
-  price<=0 ||
-  !Number.isInteger(stock) ||
-  stock<0
- ){
-  return toast('Product details check karein.');
- }
-
- try{
-
-  await updateDoc(doc(db,'products',id),{
-   name,
-   localName,
-   weight,
-   price,
-   stock,
-   active:stock>0,
-   updatedAt:serverTimestamp()
-  });
-
-  closeModal();
-
-  toast('Product updated.');
-
-  await loadDashboard();
-
-  tab='products';
-  renderDashboard();
-
- }catch(e){
-  err(e);
- }
-
+  try {
+    await updateDoc(doc(db, 'products', id), {
+      name, localName, weight, price, stock,
+      active: stock > 0,
+      updatedAt: serverTimestamp()
+    });
+    closeModal();
+    toast('Product updated.');
+    await loadDashboard();
+    tab = 'products';
+    renderDashboard();
+  } catch (e) {
+    err(e);
+  }
 };
 
+window.toggleProduct = async (id, visible) => {
+  if (!allowed()) return;
+  const p = products.find(x => x.id === id);
+  if (visible && Number(p?.stock || 0) <= 0) return toast('Publish karne se pehle stock add karein.');
 
-/* PRODUCT VISIBILITY */
-
-window.toggleProduct = async(id,hidden)=>{
-
- if(!allowed())return;
-
- const p = products.find(x=>x.id===id);
-
- if(hidden && Number(p?.stock||0)<=0){
-  return toast('Publish karne se pehle stock add karein.');
- }
-
- try{
-
-  await updateDoc(doc(db,'products',id),{
-   active:hidden,
-   updatedAt:serverTimestamp()
-  });
-
-  await loadDashboard();
-
-  tab='products';
-  renderDashboard();
-
- }catch(e){
-  err(e);
- }
-
+  try {
+    await updateDoc(doc(db, 'products', id), { active: visible, updatedAt: serverTimestamp() });
+    await loadDashboard();
+    tab = 'products';
+    renderDashboard();
+  } catch (e) {
+    err(e);
+  }
 };
-
-
-/* DELETE PRODUCT */
 
 window.removeProduct = async id => {
+  if (!allowed()) return;
+  const p = products.find(x => x.id === id);
+  if (!p || !confirm(p.name + ' delete karein?')) return;
 
- if(!allowed())return;
-
- const p = products.find(x=>x.id===id);
-
- if(!p || !confirm(p.name+' delete karein?'))return;
-
- try{
-
-  await deleteDoc(doc(db,'products',id));
-
-  toast('Product deleted.');
-
-  await loadDashboard();
-
-  tab='products';
-  renderDashboard();
-
- }catch(e){
-  err(e);
- }
-
+  try {
+    await deleteDoc(doc(db, 'products', id));
+    toast('Product deleted.');
+    await loadDashboard();
+    tab = 'products';
+    renderDashboard();
+  } catch (e) {
+    err(e);
+  }
 };
 
-
-/* ORDERS */
-
-function ordersView(){
-
- const list = [...orders].sort(
-  (a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0)
- );
-
- return list.length
- ? `<div class="space-y-3">${list.map(orderCard).join('')}</div>`
- : `
-
- <section class="panel p-10 text-center">
-
- <i class="fa-solid fa-receipt text-3xl text-slate-300"></i>
-
- <h2 class="font-extrabold mt-3">No orders yet</h2>
-
- <p class="text-sm text-slate-500 mt-1">
- Customer orders for your shop will appear here.
- </p>
-
- </section>
-
- `;
-
+function ordersView() {
+  const list = [...orders].sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+  return list.length
+    ? `<div class="space-y-3">${list.map(orderCard).join('')}</div>`
+    : `<section class="panel p-10 text-center"><i class="fa-solid fa-receipt text-3xl text-slate-300"></i><h2 class="font-extrabold mt-3">No orders yet</h2><p class="text-sm text-slate-500 mt-1">Customer orders for your shop will appear here.</p></section>`;
 }
 
+function orderCard(o) {
+  const s = o.status || 'Order Placed';
+  let action = '';
 
-function orderCard(o){
+  if (s === 'Order Placed') {
+    action = `<button onclick="changeOrderStatus('${esc(o.id)}','Picking in Progress')" class="btn-primary rounded-lg px-3 py-2 text-xs font-bold">Start preparing</button>`;
+  } else if (s === 'Picking in Progress') {
+    action = `<button onclick="changeOrderStatus('${esc(o.id)}','Packing Complete')" class="btn-primary rounded-lg px-3 py-2 text-xs font-bold">Mark ready</button>`;
+  } else if (o.mode === 'pickup' && s === 'Packing Complete') {
+    action = `<button onclick="changeOrderStatus('${esc(o.id)}','Delivered')" class="btn-primary rounded-lg px-3 py-2 text-xs font-bold">Confirm handover</button>`;
+  } else if (s === 'Packing Complete') {
+    action = `<div class="flex flex-wrap items-center gap-2"><span class="text-xs text-blue-700 font-bold">Ready for delivery partner</span><button onclick="changeOrderStatus('${esc(o.id)}','Handed Over')" class="btn-primary rounded-lg px-3 py-2 text-xs font-bold">Handover to delivery partner</button></div>`;
+  } else {
+    action = `<span class="text-xs text-slate-500 font-bold">${esc(s)}</span>`;
+  }
 
- const s = o.status || 'Order Placed';
-
- let action = '';
-
- if(s==='Order Placed'){
-
-  action = `
-  <button onclick="changeOrderStatus('${esc(o.id)}','Picking in Progress')" class="btn-primary rounded-lg px-3 py-2 text-xs font-bold">
-  Start preparing
-  </button>
+  return `
+    <article class="panel p-4">
+      <div class="flex flex-wrap justify-between gap-2">
+        <div><p class="text-xs text-slate-500">Order #${esc(o.id)} · ${esc(o.customerName || 'Customer')}</p><p class="font-extrabold text-sm mt-1">${esc(s)}</p></div>
+        <span class="text-xs font-bold">${money(o.total)}</span>
+      </div>
+      <p class="text-xs text-slate-500 mt-2">${o.mode === 'pickup' ? 'Store pickup' : 'Home delivery'} · ${esc(o.address || '')}</p>
+      <p class="text-xs text-slate-500 mt-1">Mobile: ${esc(o.customerPhone || '')}</p>
+      <div class="bg-slate-50 rounded-lg p-2 mt-3 text-xs">
+        ${(o.items || []).map(i => `<div class="flex justify-between py-1"><span>${esc(i.name)} × ${Number(i.qty || 1)}</span><b>${money(Number(i.price || 0) * Number(i.qty || 1))}</b></div>`).join('')}
+      </div>
+      <div class="mt-3 flex justify-end">${action}</div>
+    </article>
   `;
-
- }else if(s==='Picking in Progress'){
-
-  action = `
-  <button onclick="changeOrderStatus('${esc(o.id)}','Packing Complete')" class="btn-primary rounded-lg px-3 py-2 text-xs font-bold">
-  Mark ready
-  </button>
-  `;
-
- }else if(o.mode==='pickup' && s==='Packing Complete'){
-
-  action = `
-  <button onclick="changeOrderStatus('${esc(o.id)}','Delivered')" class="btn-primary rounded-lg px-3 py-2 text-xs font-bold">
-  Confirm handover
-  </button>
-  `;
-
- }else if(s==='Packing Complete'){
-
-  action = `
-  <div class="flex flex-wrap items-center gap-2">
-  <span class="text-xs text-blue-700 font-bold">Ready for delivery partner</span>
-  <button onclick="changeOrderStatus('${esc(o.id)}','Handed Over')" class="btn-primary rounded-lg px-3 py-2 text-xs font-bold">
-  Handover to delivery partner
-  </button>
-  </div>
-  `;
-
- }else{
-
-  action = `<span class="text-xs text-slate-500 font-bold">${esc(s)}</span>`;
-
- }
-
- return `
-
- <article class="panel p-4">
-
- <div class="flex flex-wrap justify-between gap-2">
-
- <div>
- <p class="text-xs text-slate-500">Order #${esc(o.id)} · ${esc(o.customerName||'Customer')}</p>
- <p class="font-extrabold text-sm mt-1">${esc(s)}</p>
- </div>
-
- <span class="text-xs font-bold">${money(o.total)}</span>
-
- </div>
-
- <p class="text-xs text-slate-500 mt-2">
- ${o.mode==='pickup'?'Store pickup':'Home delivery'} · ${esc(o.address||'')}
- </p>
-
- <p class="text-xs text-slate-500 mt-1">
- Mobile: ${esc(o.customerPhone||'')}
- </p>
-
- <div class="bg-slate-50 rounded-lg p-2 mt-3 text-xs">
-
- ${(o.items||[]).map(i=>`
-
- <div class="flex justify-between py-1">
- <span>${esc(i.name)} × ${Number(i.qty||1)}</span>
- <b>${money(Number(i.price||0)*Number(i.qty||1))}</b>
- </div>
-
- `).join('')}
-
- </div>
-
- <div class="mt-3 flex justify-end">
- ${action}
- </div>
-
- </article>
-
- `;
-
 }
 
+window.changeOrderStatus = async (id, nextAction) => {
+  if (!allowed()) return;
+  const o = orders.find(x => x.id === id);
+  if (!o) return;
 
-/* ORDER STATUS */
+  const payload = { updatedAt: serverTimestamp() };
 
-window.changeOrderStatus = async(id,status)=>{
-
- if(!allowed())return;
-
- const o = orders.find(x=>x.id===id);
- if(!o)return;
-
- const data = {
-  status,
-  updatedAt:serverTimestamp()
- };
-
- if(status==='Packing Complete' && o.mode!=='pickup'){
-  data.deliveryStatus='Available';
- }
-
- if(status==='Handed Over'){
-  data.status='Out for Delivery';
-  data.deliveryStatus='Handed Over';
-  data.handedOverAt=serverTimestamp();
- }
-
- if(status==='Delivered'){
-  data.deliveryStatus='Delivered';
- }
-
- try{
-
-  await updateDoc(doc(db,'orders',id),data);
-  toast('Order status updated.');
-  tab='orders';
-  await loadDashboard();
-
- }catch(e){
-  err(e,'changeOrderStatus');
- }
-
-};
-
-
-/* ORDER STATUS */
-
-window.changeOrderStatus = async(id,status)=>{
-
- if(!allowed())return;
-
- const o = orders.find(x=>x.id===id);
- if(!o)return;
-
- const data = {
-  status,
-  updatedAt:serverTimestamp()
- };
-
- if(status==='Packing Complete' && o.mode!=='pickup'){
-  data.deliveryStatus='Available';
- }
-
- if(status==='Delivered'){
-  data.deliveryStatus='Delivered';
- }
-
- try{
-
-  await updateDoc(doc(db,'orders',id),data);
-
-  toast('Order status updated.');
-
-  await loadDashboard();
-
-  tab='orders';
-  renderDashboard();
-
- }catch(e){
-  err(e);
- }
-
-};
-
-
-/* MODAL */
-
-window.closeModal = ()=>{
-
- $('modal-overlay').classList.add('hidden');
- $('modal-overlay').classList.remove('flex');
-
-};
-
-
-/* LOGOUT */
-
-window.logoutShopkeeper = async()=>{
-
- try{
-
-  await signOut(auth);
-
- }catch(e){
-
-  err(e);
-
- }
-
- currentUser=null;
- currentProfile=null;
- products=[];
- orders=[];
-
- renderAuth();
-
-};
-
-
-/* AUTH STATE LISTENER */
-
-onAuthStateChanged(auth,async user=>{
-
- if(!user){
-
-  currentUser=null;
-  currentProfile=null;
-
-  if(!registrationInProgress){
-   renderAuth();
+  if (nextAction === 'Handed Over') {
+    payload.status = 'Out for Delivery';
+    payload.deliveryStatus = 'Handed Over';
+    payload.handedOverAt = serverTimestamp();
+  } else if (nextAction === 'Delivered') {
+    payload.status = 'Delivered';
+    payload.deliveryStatus = 'Delivered';
+  } else {
+    payload.status = nextAction;
+    if (nextAction === 'Packing Complete' && o.mode !== 'pickup') {
+      payload.deliveryStatus = 'Available';
+    }
   }
 
-  return;
+  try {
+    await updateDoc(doc(db, 'orders', id), payload);
+    toast('Order status updated.');
+    tab = 'orders';
+    await loadDashboard();
+  } catch (e) {
+    err(e);
+  }
+};
 
- }
+window.closeModal = () => {
+  $('modal-overlay').classList.add('hidden');
+  $('modal-overlay').classList.remove('flex');
+};
 
- currentUser=user;
+window.logoutShopkeeper = async () => {
+  try { await signOut(auth); } catch (e) { err(e); }
+  currentUser = null;
+  currentProfile = null;
+  products = [];
+  orders = [];
+  renderAuth();
+};
 
- if(registrationInProgress)return;
-
- try{
-
-  await loadProfile(user.uid);
-
- }catch(e){
-
-  console.error('Profile loading error:',e);
-
-  err(e);
-
-  if(auth.currentUser){
-   await signOut(auth);
+onAuthStateChanged(auth, async user => {
+  if (!user) {
+    currentUser = null;
+    currentProfile = null;
+    if (!registrationInProgress) renderAuth();
+    return;
   }
 
- }
+  currentUser = user;
+  if (registrationInProgress) return;
 
+  try {
+    await loadProfile(user.uid);
+  } catch (e) {
+    err(e);
+    if (auth.currentUser) await signOut(auth);
+  }
 });
-
-
 </script>
 </body>
 </html>
