@@ -72,7 +72,7 @@ button,input,select,textarea{font:inherit}
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'https://www.gstatic.com/firebasejs/12.5.0/firebase-auth.js';
-import { getFirestore, doc, getDoc, setDoc, collection, addDoc, getDocs, query, where, updateDoc, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js';
+import { getFirestore, doc, getDoc, setDoc, collection, addDoc, query, where, onSnapshot, updateDoc, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCuSO-U8o1QYUSR2Ay-mBb7orjgLj4H448",
@@ -95,6 +95,8 @@ let tab = 'overview';
 let authTab = 'login';
 let registrationInProgress = false;
 let profileLoadInFlight = null;
+let unsubShopProducts = null;
+let unsubShopOrders = null;
 
 const $ = id => document.getElementById(id);
 const money = n => '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
@@ -127,9 +129,14 @@ function err(e) {
   toast(messages[e.code] || e.message || 'Kuch galat hua. Console check karein.');
 }
 
+function stopShopListeners() {
+  if (unsubShopProducts) { unsubShopProducts(); unsubShopProducts = null; }
+  if (unsubShopOrders) { unsubShopOrders(); unsubShopOrders = null; }
+}
+
 function renderAuth() {
-  $('logout-btn').classList.add('hidden');
-  $('header-shop').textContent = 'Shopkeeper Portal';
+  stopShopListeners();
+  $('logout-btn').classList.add('hidden');$('header-shop').textContent = 'Shopkeeper Portal';
 
   $('app').innerHTML = `
     <div class="auth-wrap">
@@ -156,8 +163,7 @@ function renderAuth() {
 
 window.showAuthTab = t => {
   authTab = t;
-  $('login-tab').className = t === 'login' ? 'btn-primary rounded-xl py-2.5 text-sm font-bold' : 'rounded-xl border py-2.5 text-sm font-bold';
-  $('register-tab').className = t === 'register' ? 'btn-primary rounded-xl py-2.5 text-sm font-bold' : 'rounded-xl border py-2.5 text-sm font-bold';
+  $('login-tab').className = t === 'login' ? 'btn-primary rounded-xl py-2.5 text-sm font-bold' : 'rounded-xl border py-2.5 text-sm font-bold';$('register-tab').className = t === 'register' ? 'btn-primary rounded-xl py-2.5 text-sm font-bold' : 'rounded-xl border py-2.5 text-sm font-bold';
 
   const extra = t === 'register' ? `
     <div class="grid sm:grid-cols-2 gap-3">
@@ -227,16 +233,15 @@ window.handleAuth = async e => {
     registrationInProgress = false;
     err(error);
   } finally {
-    if ($('auth-submit')) {
-      $('auth-submit').disabled = false;
+    if ($('auth-submit')) {$('auth-submit').disabled = false;
       $('auth-submit').textContent = authTab === 'register' ? 'Create Shopkeeper Account' : 'Login to your shop';
     }
   }
 };
 
 function renderProfileError(error, uid) {
-  $('logout-btn').classList.remove('hidden');
-  $('header-shop').textContent = 'Shopkeeper Portal';
+  stopShopListeners();
+  $('logout-btn').classList.remove('hidden');$('header-shop').textContent = 'Shopkeeper Portal';
   const code = error?.code || '';
   const isTransient = code === 'permission-denied' || code === 'unavailable' || code === 'network-request-failed' || code === 'deadline-exceeded' || /network|permission|offline|unavailable|missing/i.test(error?.message || '');
 
@@ -319,6 +324,7 @@ async function loadProfile(uid) {
 
 onAuthStateChanged(auth, async user => {
   if (!user) {
+    stopShopListeners();
     currentUser = null;
     currentProfile = null;
     profileLoadInFlight = null;
@@ -343,10 +349,11 @@ function statusScreen() {
   $('header-shop').textContent = currentProfile.shopName || currentProfile.name || 'My Shop';
 
   if (st === 'approved' || st === 'active') {
-    loadDashboard();
+    startLiveShopDashboard();
     return;
   }
 
+  stopShopListeners();
   $('logout-btn').classList.remove('hidden');
   const rejected = st === 'rejected';
 
@@ -379,26 +386,49 @@ function allowed() {
   return true;
 }
 
-async function loadDashboard() {
-  $('logout-btn').classList.remove('hidden');
-  $('header-shop').textContent = currentProfile.shopName || 'My Shop';
-  $('app').innerHTML = `<div class="panel p-8 text-center"><i class="fa-solid fa-spinner fa-spin text-2xl text-green-700"></i><p class="text-sm text-slate-500 mt-3">Loading your shop...</p></div>`;
+function isSearchActive() {
+  const el = $('product-search');
+  return !!(el && document.activeElement === el);
+}
+
+function startLiveShopDashboard() {
+  $('logout-btn').classList.remove('hidden');$('header-shop').textContent = currentProfile.shopName || 'My Shop';
+  stopShopListeners();
 
   try {
     const uid = currentUser.uid;
     const sid = currentProfile.shopId;
+    let productsReady = false;
+    let ordersReady = false;
 
-    const [ps, os] = await Promise.all([
-      getDocs(query(collection(db, 'products'), where('ownerUid', '==', uid))),
-      getDocs(query(collection(db, 'orders'), where('shopId', '==', sid)))
-    ]);
+    const tryRender = () => {
+      if (productsReady && ordersReady && !isSearchActive()) {
+        renderDashboard();
+      }
+    };
 
-    products = ps.docs.map(d => ({ id: d.id, ...d.data() }));
-    orders = os.docs.map(d => ({ id: d.id, ...d.data() }));
-    renderDashboard();
+    unsubShopProducts = onSnapshot(
+      query(collection(db, 'products'), where('ownerUid', '==', uid)),
+      ps => {
+        products = ps.docs.map(d => ({ id: d.id, ...d.data() }));
+        productsReady = true;
+        tryRender();
+      },
+      e => err(e)
+    );
+
+    unsubShopOrders = onSnapshot(
+      query(collection(db, 'orders'), where('shopId', '==', sid)),
+      os => {
+        orders = os.docs.map(d => ({ id: d.id, ...d.data() }));
+        ordersReady = true;
+        tryRender();
+      },
+      e => err(e)
+    );
   } catch (e) {
     err(e);
-    $('app').innerHTML = `<div class="panel p-8 text-center"><h2 class="font-extrabold">Data load nahi hua</h2><p class="text-sm text-slate-500 mt-2">Firestore Rules aur collections check karein.</p><button onclick="loadDashboard()" class="btn-primary rounded-xl px-4 py-2 mt-4">Retry</button></div>`;
+    $('app').innerHTML = `<div class="panel p-8 text-center"><h2 class="font-extrabold">Data load nahi hua</h2><p class="text-sm text-slate-500 mt-2">Firestore Rules aur collections check karein.</p><button onclick="startLiveShopDashboard()" class="btn-primary rounded-xl px-4 py-2 mt-4">Retry</button></div>`;
   }
 }
 
@@ -419,8 +449,8 @@ function stat(label, value, icon, tone) {
 }
 
 function renderDashboard() {
-  const delivered = orders.filter(o => o.status === 'Delivered');
-  const active = orders.filter(o => !['Delivered', 'Cancelled'].includes(o.status));
+  const delivered = orders.filter(o => o.status === 'Delivered' || o.deliveryStatus === 'Delivered');
+  const active = orders.filter(o => !['Delivered', 'Cancelled'].includes(o.status) && o.deliveryStatus !== 'Delivered');
 
   $('app').innerHTML = `
     <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-5">
@@ -429,7 +459,7 @@ function renderDashboard() {
         <h1 class="text-2xl font-extrabold mt-1">${esc(currentProfile.shopName)}</h1>
         <p class="text-sm text-slate-500 mt-1">${esc(currentProfile.address || '')} · Shop ID: ${esc(currentProfile.shopId)}</p>
       </div>
-      <span class="rounded-full bg-green-50 text-green-800 px-3 py-2 text-xs font-bold">Approved shop</span>
+      <span class="rounded-full bg-green-50 text-green-800 px-3 py-2 text-xs font-bold">Approved shop · Live</span>
     </div>
 
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
@@ -469,7 +499,7 @@ function renderTab() {
         </section>
         <section class="panel p-5">
           <h2 class="font-extrabold">Stock summary</h2>
-          <div class="space-y-3 mt-4">${products.slice(0, 6).map(p => `<div class="flex justify-between gap-3 text-sm border-b pb-2"><span>${esc(p.name)}</span><b>${Number(p.stock || 0)} ${esc(p.weight || 'units')}</b></div>`).join('') || '<p class="text-sm text-slate-500">No products added yet.</p>'}</div>
+          <div class="space-y-3 mt-4">${products.slice(0, 6).map(p => `<div class="flex justify-between gap-3 text-sm border-b pb-2"><span>${esc(p.name)}</span><b>${Number(p.stock \vert{}\vert{} 0)}${esc(p.weight || 'units')}</b></div>`).join('') || '<p class="text-sm text-slate-500">No products added yet.</p>'}</div>
           <button onclick="setTab('products')" class="text-green-800 text-xs font-bold mt-4">Manage products →</button>
         </section>
       </div>
@@ -519,7 +549,7 @@ function productList(list) {
           <div class="flex flex-wrap items-center gap-3">
             <div class="flex-1 min-w-[140px]">
               <p class="font-extrabold text-sm">${esc(p.name)}</p>
-              <p class="text-[11px] text-slate-500 mt-1">${esc(p.localName || '')} ${esc(p.weight || '')} · ${esc(p.category || '')}</p>
+              <p class="text-[11px] text-slate-500 mt-1">${esc(p.localName || '')} ${esc(p.weight \vert{}\vert{} '')} ·${esc(p.category || '')}</p>
             </div>
             <div class="text-right">
               <p class="font-extrabold">${money(p.price)}</p>
@@ -553,7 +583,7 @@ window.addProduct = async () => {
   const price = Number($('new-price').value);
   const stock = Number($('new-stock').value);
 
-  if (!name || !weight || $('new-price').value === '' || $('new-stock').value === '' || !Number.isFinite(price) || price <= 0 || !Number.isInteger(stock) || stock < 0) {
+  if (!name || !weight || $('new-price').value === '' \vert{}\vert{}$('new-stock').value === '' || !Number.isFinite(price) || price <= 0 || !Number.isInteger(stock) || stock < 0) {
     return toast('Product name, unit, valid price aur stock bharein.');
   }
 
@@ -568,7 +598,6 @@ window.addProduct = async () => {
       updatedAt: serverTimestamp()
     });
     toast('Product add ho gaya.');
-    await loadDashboard();
     tab = 'products';
     renderDashboard();
   } catch (e) {
@@ -579,8 +608,7 @@ window.addProduct = async () => {
 window.editProduct = id => {
   const p = products.find(x => x.id === id);
   if (!p) return;
-  $('modal-title').textContent = 'Edit product';
-  $('modal-content').innerHTML = `
+  $('modal-title').textContent = 'Edit product';$('modal-content').innerHTML = `
     <div class="space-y-3">
       <label class="block text-xs font-bold">Product name<input id="edit-name" class="field mt-1" value="${esc(p.name)}"></label>
       <label class="block text-xs font-bold">Local name<input id="edit-local" class="field mt-1" value="${esc(p.localName || '')}"></label>
@@ -592,8 +620,7 @@ window.editProduct = id => {
       <button onclick="saveProductEdit('${id}')" class="btn-primary w-full rounded-xl py-3 font-bold">Save changes</button>
     </div>
   `;
-  $('modal-overlay').classList.remove('hidden');
-  $('modal-overlay').classList.add('flex');
+  $('modal-overlay').classList.remove('hidden');$('modal-overlay').classList.add('flex');
 };
 
 window.saveProductEdit = async id => {
@@ -616,9 +643,6 @@ window.saveProductEdit = async id => {
     });
     closeModal();
     toast('Product updated.');
-    await loadDashboard();
-    tab = 'products';
-    renderDashboard();
   } catch (e) {
     err(e);
   }
@@ -631,9 +655,6 @@ window.toggleProduct = async (id, visible) => {
 
   try {
     await updateDoc(doc(db, 'products', id), { active: visible, updatedAt: serverTimestamp() });
-    await loadDashboard();
-    tab = 'products';
-    renderDashboard();
   } catch (e) {
     err(e);
   }
@@ -647,9 +668,6 @@ window.removeProduct = async id => {
   try {
     await deleteDoc(doc(db, 'products', id));
     toast('Product deleted.');
-    await loadDashboard();
-    tab = 'products';
-    renderDashboard();
   } catch (e) {
     err(e);
   }
@@ -675,7 +693,7 @@ function orderCard(o) {
   } else if (s === 'Packing Complete') {
     action = `<div class="flex flex-wrap items-center gap-2"><span class="text-xs text-blue-700 font-bold">Ready for delivery partner</span><button onclick="changeOrderStatus('${esc(o.id)}','Handed Over')" class="btn-primary rounded-lg px-3 py-2 text-xs font-bold">Handover to delivery partner</button></div>`;
   } else {
-    action = `<span class="text-xs text-slate-500 font-bold">${esc(s)}</span>`;
+    action = `<span class="text-xs text-slate-500 font-bold">${esc(o.deliveryStatus ? `${s} (${o.deliveryStatus})` : s)}</span>`;
   }
 
   return `
@@ -687,7 +705,7 @@ function orderCard(o) {
       <p class="text-xs text-slate-500 mt-2">${o.mode === 'pickup' ? 'Store pickup' : 'Home delivery'} · ${esc(o.address || '')}</p>
       <p class="text-xs text-slate-500 mt-1">Mobile: ${esc(o.customerPhone || '')}</p>
       <div class="bg-slate-50 rounded-lg p-2 mt-3 text-xs">
-        ${(o.items || []).map(i => `<div class="flex justify-between py-1"><span>${esc(i.name)} × ${Number(i.qty || 1)}</span><b>${money(Number(i.price || 0) * Number(i.qty || 1))}</b></div>`).join('')}
+        ${(o.items || []).map(i => `<div class="flex justify-between py-1"><span>${esc(i.name)} × ${Number(i.qty \vert{}\vert{} 1)}</span><b>${money(Number(i.price || 0) * Number(i.qty || 1))}</b></div>`).join('')}
       </div>
       <div class="mt-3 flex justify-end">${action}</div>
     </article>
@@ -718,19 +736,17 @@ window.changeOrderStatus = async (id, nextAction) => {
   try {
     await updateDoc(doc(db, 'orders', id), payload);
     toast('Order status updated.');
-    tab = 'orders';
-    await loadDashboard();
   } catch (e) {
     err(e);
   }
 };
 
 window.closeModal = () => {
-  $('modal-overlay').classList.add('hidden');
-  $('modal-overlay').classList.remove('flex');
+  $('modal-overlay').classList.add('hidden');$('modal-overlay').classList.remove('flex');
 };
 
 window.logoutShopkeeper = async () => {
+  stopShopListeners();
   try { await signOut(auth); } catch (e) { err(e); }
   currentUser = null;
   currentProfile = null;
@@ -738,25 +754,6 @@ window.logoutShopkeeper = async () => {
   orders = [];
   renderAuth();
 };
-
-onAuthStateChanged(auth, async user => {
-  if (!user) {
-    currentUser = null;
-    currentProfile = null;
-    if (!registrationInProgress) renderAuth();
-    return;
-  }
-
-  currentUser = user;
-  if (registrationInProgress) return;
-
-  try {
-    await loadProfile(user.uid);
-  } catch (e) {
-    err(e);
-    if (auth.currentUser) await signOut(auth);
-  }
-});
 </script>
 </body>
 </html>
